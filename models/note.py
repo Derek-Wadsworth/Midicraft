@@ -13,6 +13,8 @@ class Note:
         end_time:    Time in seconds when the note ends.
         confidence:  How confident the detector is (0.0 - 1.0).
         frequency:   Raw detected frequency in Hz (before rounding to MIDI).
+        voice_id:    MIDI channel / voice lane (0 default; 9 = drums).
+        stem_name:   Source stem label when using stem separation.
     """
     midi_pitch: int
     note_name: str
@@ -20,6 +22,8 @@ class Note:
     end_time: float
     confidence: float = 1.0
     frequency: float = 0.0
+    voice_id: int = 0
+    stem_name: str | None = None
 
     @property
     def duration(self) -> float:
