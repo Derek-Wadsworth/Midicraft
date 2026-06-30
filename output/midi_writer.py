@@ -112,6 +112,59 @@ class MidiWriter:
         print(f"[MidiWriter] Saved MIDI to: {output_path}")
         return output_path
 
+    def write_multi_track(
+        self,
+        notes: list[Note],
+        output_path: str,
+        tempo_bpm: float = 120.0,
+        velocity: int = 80,
+    ) -> str:
+        """Write notes grouped by voice_id, one MidiTrack per voice."""
+        if not MIDO_AVAILABLE:
+            print("[MidiWriter] 'mido' not installed. Run: pip install mido")
+            return self._write_fallback(notes, output_path)
+
+        if not notes:
+            print("[MidiWriter] No notes to write.")
+            return output_path
+
+        tempo_us = int(60_000_000 / tempo_bpm)
+        midi = MidiFile(ticks_per_beat=self.ticks_per_beat)
+
+        by_voice: dict[int, list[Note]] = {}
+        for note in notes:
+            if not note.is_valid():
+                continue
+            by_voice.setdefault(note.voice_id, []).append(note)
+
+        for voice_id in sorted(by_voice.keys()):
+            track = MidiTrack()
+            midi.tracks.append(track)
+            track.append(MetaMessage('set_tempo', tempo=tempo_us, time=0))
+
+            events = []
+            for note in by_voice[voice_id]:
+                on_tick = self._seconds_to_ticks(note.start_time, tempo_us)
+                off_tick = self._seconds_to_ticks(note.end_time, tempo_us)
+                events.append((on_tick, 'note_on', note.midi_pitch))
+                events.append((off_tick, 'note_off', note.midi_pitch))
+
+            events.sort(key=lambda e: e[0])
+            last_tick = 0
+            channel = min(voice_id, 15)
+            for abs_tick, event_type, pitch in events:
+                delta = abs_tick - last_tick
+                last_tick = abs_tick
+                if event_type == 'note_on':
+                    track.append(Message('note_on', channel=channel, note=pitch, velocity=velocity, time=delta))
+                else:
+                    track.append(Message('note_off', channel=channel, note=pitch, velocity=0, time=delta))
+
+        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
+        midi.save(output_path)
+        print(f"[MidiWriter] Saved multi-track MIDI to: {output_path}")
+        return output_path
+
     def _write_fallback(self, notes: list[Note], output_path: str) -> str:
         """Write a simple text representation when mido is not available."""
         txt_path = output_path.replace('.mid', '_notes.txt')

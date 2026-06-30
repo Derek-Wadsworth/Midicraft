@@ -2,6 +2,7 @@ import os
 import csv
 import json
 from models.note import Note
+from models.transcription_result import MergedTranscriptionResult
 
 
 class TextExporter:
@@ -31,17 +32,28 @@ class TextExporter:
         lines.append("=" * 65)
         lines.append("TRANSCRIPTION RESULTS")
         lines.append("=" * 65)
-        lines.append(f"{'#':<5} {'Note':<6} {'MIDI':>4}  {'Start':>8}  {'End':>8}  {'Duration':>9}  {'Conf':>5}")
-        lines.append("-" * 65)
-
-        for i, note in enumerate(notes, 1):
-            lines.append(
-                f"{i:<5} {note.note_name:<6} {note.midi_pitch:>4}  "
-                f"{note.start_time:>7.3f}s  {note.end_time:>7.3f}s  "
-                f"{note.duration:>8.3f}s  {note.confidence:>5.2f}"
-            )
-
-        lines.append("-" * 65)
+        has_voice = any(n.voice_id != 0 or n.stem_name for n in notes)
+        if has_voice:
+            lines.append(f"{'#':<5} {'Stem':<8} {'Ch':>2}  {'Note':<6} {'MIDI':>4}  {'Start':>8}  {'End':>8}  {'Duration':>9}  {'Conf':>5}")
+            lines.append("-" * 80)
+            for i, note in enumerate(notes, 1):
+                stem = note.stem_name or "-"
+                lines.append(
+                    f"{i:<5} {stem:<8} {note.voice_id:>2}  {note.note_name:<6} {note.midi_pitch:>4}  "
+                    f"{note.start_time:>7.3f}s  {note.end_time:>7.3f}s  "
+                    f"{note.duration:>8.3f}s  {note.confidence:>5.2f}"
+                )
+            lines.append("-" * 80)
+        else:
+            lines.append(f"{'#':<5} {'Note':<6} {'MIDI':>4}  {'Start':>8}  {'End':>8}  {'Duration':>9}  {'Conf':>5}")
+            lines.append("-" * 65)
+            for i, note in enumerate(notes, 1):
+                lines.append(
+                    f"{i:<5} {note.note_name:<6} {note.midi_pitch:>4}  "
+                    f"{note.start_time:>7.3f}s  {note.end_time:>7.3f}s  "
+                    f"{note.duration:>8.3f}s  {note.confidence:>5.2f}"
+                )
+            lines.append("-" * 65)
         lines.append(f"Total notes: {len(notes)}")
         if notes:
             lines.append(f"Total duration: {max(n.end_time for n in notes):.3f}s")
@@ -72,10 +84,15 @@ class TextExporter:
 
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['index', 'note_name', 'midi_pitch', 'start_time', 'end_time', 'duration', 'confidence', 'frequency_hz'])
+            writer.writerow([
+                'index', 'stem_name', 'voice_id', 'note_name', 'midi_pitch',
+                'start_time', 'end_time', 'duration', 'confidence', 'frequency_hz',
+            ])
             for i, note in enumerate(notes, 1):
                 writer.writerow([
                     i,
+                    note.stem_name or '',
+                    note.voice_id,
                     note.note_name,
                     note.midi_pitch,
                     round(note.start_time, 4),
@@ -105,6 +122,8 @@ class TextExporter:
             "notes": [
                 {
                     "index": i,
+                    "stem_name": note.stem_name,
+                    "voice_id": note.voice_id,
                     "note_name": note.note_name,
                     "midi_pitch": note.midi_pitch,
                     "start_time": round(note.start_time, 4),
@@ -125,6 +144,60 @@ class TextExporter:
                 f.write(result)
             print(f"[TextExporter] Saved JSON to: {output_path}")
 
+        return result
+
+    def to_json_multitrack(self, merged: MergedTranscriptionResult, output_path: str) -> str:
+        """Export multi-stem transcription with per-track note lists."""
+        tracks = []
+        for stem_result in merged.stem_results:
+            tracks.append({
+                "name": stem_result.source_label,
+                "voice_id": stem_result.notes[0].voice_id if stem_result.notes else 0,
+                "note_count": len(stem_result.notes),
+                "notes": [
+                    {
+                        "index": i,
+                        "stem_name": note.stem_name,
+                        "voice_id": note.voice_id,
+                        "note_name": note.note_name,
+                        "midi_pitch": note.midi_pitch,
+                        "start_time": round(note.start_time, 4),
+                        "end_time": round(note.end_time, 4),
+                        "duration": round(note.duration, 4),
+                        "confidence": round(note.confidence, 4),
+                        "frequency_hz": round(note.frequency, 2),
+                    }
+                    for i, note in enumerate(stem_result.notes, 1)
+                ],
+            })
+
+        data = {
+            "tempo_bpm": round(merged.tempo, 2),
+            "total_notes": len(merged.notes),
+            "total_duration": round(max((n.end_time for n in merged.notes), default=0), 4),
+            "tracks": tracks,
+            "notes": [
+                {
+                    "index": i,
+                    "stem_name": note.stem_name,
+                    "voice_id": note.voice_id,
+                    "note_name": note.note_name,
+                    "midi_pitch": note.midi_pitch,
+                    "start_time": round(note.start_time, 4),
+                    "end_time": round(note.end_time, 4),
+                    "duration": round(note.duration, 4),
+                    "confidence": round(note.confidence, 4),
+                    "frequency_hz": round(note.frequency, 2),
+                }
+                for i, note in enumerate(merged.notes, 1)
+            ],
+        }
+
+        result = json.dumps(data, indent=2)
+        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(result)
+        print(f"[TextExporter] Saved multi-track JSON to: {output_path}")
         return result
 
     # ------------------------------------------------------------------

@@ -26,6 +26,13 @@ class Visualizer:
       3. Piano Roll     — detected notes as colored rectangles over time
     """
 
+    VOICE_COLORS = {
+        0: (0.2, 0.5, 0.9),   # vocals — blue
+        1: (0.9, 0.4, 0.2),   # bass — orange
+        2: (0.3, 0.8, 0.4),   # other — green
+        9: (0.7, 0.3, 0.7),   # drums — purple
+    }
+
     def __init__(self, sr: int = 22050, figsize: tuple = (14, 4)):
         self.sr = sr
         self.figsize = figsize
@@ -151,13 +158,15 @@ class Visualizer:
 
         # draw one rectangle per note
         for note in notes:
-            color_intensity = 0.3 + 0.7 * note.confidence  # dim low-confidence notes
+            color_intensity = 0.3 + 0.7 * note.confidence
+            base = self.VOICE_COLORS.get(note.voice_id, (0.2, 0.5 * color_intensity, color_intensity))
+            facecolor = tuple(c * (0.5 + 0.5 * color_intensity) for c in base)
             rect = mpatches.FancyBboxPatch(
-                (note.start_time, note.midi_pitch - 0.4),  # (x, y)
-                note.duration,                              # width
-                0.8,                                        # height
+                (note.start_time, note.midi_pitch - 0.4),
+                note.duration,
+                0.8,
                 boxstyle="round,pad=0.02",
-                facecolor=(0.2, 0.5 * color_intensity, color_intensity),
+                facecolor=facecolor,
                 edgecolor='white',
                 linewidth=0.5,
                 alpha=0.85,
@@ -239,11 +248,13 @@ class Visualizer:
             pitches = [n.midi_pitch for n in notes]
             for note in notes:
                 intensity = 0.3 + 0.7 * note.confidence
+                base = self.VOICE_COLORS.get(note.voice_id, (0.2, 0.5 * intensity, intensity))
+                facecolor = tuple(c * (0.5 + 0.5 * intensity) for c in base)
                 rect = mpatches.FancyBboxPatch(
                     (note.start_time, note.midi_pitch - 0.4),
                     note.duration, 0.8,
                     boxstyle="round,pad=0.02",
-                    facecolor=(0.2, 0.5 * intensity, intensity),
+                    facecolor=facecolor,
                     edgecolor='white', linewidth=0.4, alpha=0.85
                 )
                 axes[2].add_patch(rect)
@@ -266,6 +277,61 @@ class Visualizer:
 
         plt.tight_layout()
         self._show_or_save(fig, save_path)
+
+    def multi_voice_dashboard(
+        self,
+        y: np.ndarray,
+        notes: list[Note],
+        stem_results: list,
+        save_path: str = None,
+    ):
+        """Stacked piano rolls per stem plus a combined multi-voice roll."""
+        if not MATPLOTLIB_AVAILABLE or not LIBROSA_AVAILABLE:
+            print("[Visualizer] librosa and matplotlib required.")
+            return
+
+        n_stems = max(len(stem_results), 1)
+        fig, axes = plt.subplots(n_stems + 1, 1, figsize=(14, 3 * (n_stems + 1)))
+        if n_stems == 0:
+            axes = [axes]
+
+        fig.suptitle("Multi-Voice Transcription Dashboard", fontsize=14, fontweight='bold')
+
+        for ax, stem_result in zip(axes[:-1], stem_results):
+            stem_notes = stem_result.notes
+            label = stem_result.source_label
+            self._draw_piano_roll_on_ax(ax, stem_notes, title=f"Piano Roll — {label}")
+
+        self._draw_piano_roll_on_ax(axes[-1], notes, title="Combined (all voices)")
+
+        plt.tight_layout()
+        self._show_or_save(fig, save_path)
+
+    def _draw_piano_roll_on_ax(self, ax, notes: list[Note], title: str):
+        if not notes:
+            ax.set_title(f"{title} (no notes)")
+            return
+
+        pitches = [n.midi_pitch for n in notes]
+        for note in notes:
+            intensity = 0.3 + 0.7 * note.confidence
+            base = self.VOICE_COLORS.get(note.voice_id, (0.2, 0.5 * intensity, intensity))
+            facecolor = tuple(c * (0.5 + 0.5 * intensity) for c in base)
+            rect = mpatches.FancyBboxPatch(
+                (note.start_time, note.midi_pitch - 0.4),
+                note.duration, 0.8,
+                boxstyle="round,pad=0.02",
+                facecolor=facecolor,
+                edgecolor='white', linewidth=0.4, alpha=0.85,
+            )
+            ax.add_patch(rect)
+
+        ax.set_xlim(0, max(n.end_time for n in notes) + 0.5)
+        ax.set_ylim(min(pitches) - 2, max(pitches) + 2)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("MIDI Pitch")
+        ax.set_title(title)
+        ax.grid(axis='x', linestyle='--', alpha=0.3)
 
     # ------------------------------------------------------------------
     # Internal helpers
