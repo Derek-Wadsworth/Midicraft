@@ -65,7 +65,7 @@ class OnsetDetector:
             raise ImportError("librosa is required.")
 
         tempo, _ = librosa.beat.beat_track(y=y, sr=self.sr)
-        return float(tempo)
+        return float(np.atleast_1d(tempo)[0])
 
     def detect_beats(self, y: np.ndarray) -> tuple[float, np.ndarray]:
         """
@@ -80,7 +80,7 @@ class OnsetDetector:
 
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=self.sr)
         beat_times = librosa.frames_to_time(beat_frames, sr=self.sr)
-        return float(tempo), beat_times
+        return float(np.atleast_1d(tempo)[0]), beat_times
 
     def onset_strength(self, y: np.ndarray) -> np.ndarray:
         """

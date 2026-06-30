@@ -70,7 +70,7 @@ class TextExporter:
         """
         os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
 
-        with open(output_path, 'w', newline='') as f:
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['index', 'note_name', 'midi_pitch', 'start_time', 'end_time', 'duration', 'confidence', 'frequency_hz'])
             for i, note in enumerate(notes, 1):
@@ -121,7 +121,7 @@ class TextExporter:
 
         if output_path:
             os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
-            with open(output_path, 'w') as f:
+            with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(result)
             print(f"[TextExporter] Saved JSON to: {output_path}")
 
@@ -171,6 +171,6 @@ class TextExporter:
 
     def _write(self, content: str, path: str):
         os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             f.write(content)
         print(f"[TextExporter] Saved text to: {path}")

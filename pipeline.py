@@ -199,7 +199,7 @@ class TranscriptionPipeline:
         if text:
             path = os.path.join(self.output_dir, f"{base}_notes.txt")
             content = self.exporter.to_text(self.notes)
-            with open(path, 'w') as f:
+            with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)
             print(f"[TextExporter] Saved text to: {path}")
 

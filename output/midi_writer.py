@@ -115,7 +115,7 @@ class MidiWriter:
     def _write_fallback(self, notes: list[Note], output_path: str) -> str:
         """Write a simple text representation when mido is not available."""
         txt_path = output_path.replace('.mid', '_notes.txt')
-        with open(txt_path, 'w') as f:
+        with open(txt_path, 'w', encoding='utf-8') as f:
             f.write("# Transcribed Notes (mido not available)\n")
             f.write(f"# {'Note':<6} {'MIDI':>4} {'Start':>8} {'End':>8} {'Duration':>10}\n")
             for note in notes:

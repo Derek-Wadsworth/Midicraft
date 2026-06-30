@@ -196,7 +196,7 @@ class Segmenter:
 
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=self.sr)
         beat_samples = librosa.frames_to_samples(beat_frames)
-        tempo = float(tempo)
+        tempo = float(np.atleast_1d(tempo)[0])
 
         segments = []
         for i in range(len(beat_samples) - 1):

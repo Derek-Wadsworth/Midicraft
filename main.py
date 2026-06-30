@@ -288,7 +288,7 @@ def main():
     if "text" in args.export_formats:
         path = os.path.join(args.output_dir, f"{base_name}_notes.txt")
         text = exporter.to_text(notes)
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             f.write(text)
         print(f"[TextExporter] Saved text to: {path}")
         output_files.append(path)
