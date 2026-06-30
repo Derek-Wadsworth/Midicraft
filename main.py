@@ -1,17 +1,15 @@
 """
-main.py — CLI entry point for the monophonic melody transcriber.
+main.py — CLI entry point for Midicraft transcription.
 
 Usage:
     python main.py <audio_file> [options]
 
 Examples:
     python main.py song.mp3
-    python main.py song.wav --output-dir ./results --no-plot
-    python main.py song.mp3 --export-formats midi csv json text
-    python main.py song.mp3 --info-only
-
-Dependencies:
-    pip install librosa numpy matplotlib mido soundfile
+    python main.py song.mp3 --mode stems --no-plot
+    python main.py song.mp3 --mode poly
+    python main.py song.mp3 --separate-only
+    python main.py song.mp3 --mode stems+poly --stem-modes other:poly
 """
 
 import argparse
@@ -20,101 +18,105 @@ import sys
 import time
 
 
+def parse_stem_modes(value: str) -> dict[str, str]:
+    """Parse 'vocals:mono,other:poly' into a dict."""
+    modes: dict[str, str] = {}
+    if not value:
+        return modes
+    for part in value.split(","):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        stem, mode = part.split(":", 1)
+        modes[stem.strip()] = mode.strip()
+    return modes
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Monophonic Melody Transcriber — converts audio to MIDI/notes",
+        description="Midicraft — audio transcription with mono, stem, and polyphonic modes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python main.py guitar_solo.mp3
-  python main.py flute.wav --output-dir ./out --no-plot
-  python main.py melody.mp3 --export-formats midi json
-        """
+  python main.py song.mp3 --mode stems --no-plot
+  python main.py song.mp3 --separate-only
+  python main.py song.mp3 --mode stems+poly --stem-modes other:poly
+        """,
     )
 
-    parser.add_argument(
-        "audio_file",
-        help="Path to audio file (.mp3, .wav, .flac, .ogg)"
-    )
-    parser.add_argument(
-        "--output-dir", "-o",
-        default="./output",
-        help="Directory to save output files (default: ./output)"
-    )
+    parser.add_argument("audio_file", help="Path to audio file (.mp3, .wav, .flac, .ogg)")
+    parser.add_argument("--output-dir", "-o", default="./output", help="Output directory (default: ./output)")
     parser.add_argument(
         "--export-formats", "-f",
         nargs="+",
         choices=["midi", "csv", "json", "text"],
         default=["midi", "text"],
-        help="Output formats to export (default: midi text)"
+        help="Output formats (default: midi text)",
     )
-    parser.add_argument(
-        "--no-plot",
+    parser.add_argument("--no-plot", action="store_true", help="Skip visualization")
+    parser.add_argument("--save-plots", action="store_true", help="Save plots as PNG")
+    parser.add_argument("--sample-rate", "-sr", type=int, default=22050, help="Sample rate (default: 22050)")
+    parser.add_argument("--confidence-threshold", "-c", type=float, default=0.4, help="Min note confidence")
+    parser.add_argument("--subdivisions", type=int, default=4, choices=[1, 2, 4, 8, 16], help="Quantization grid")
+    parser.add_argument("--info-only", action="store_true", help="Only show audio file info")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+
+    mode_group = parser.add_argument_group("transcription mode")
+    mode_group.add_argument(
+        "--mode",
+        choices=["mono", "stems", "poly", "stems+poly"],
+        default="mono",
+        help="mono (default), stems, poly, or stems+poly",
+    )
+    mode_group.add_argument(
+        "--separate-only",
         action="store_true",
-        help="Skip visualization (useful for headless/server environments)"
+        help="Only separate stems to WAV files, skip transcription",
     )
-    parser.add_argument(
-        "--save-plots",
-        action="store_true",
-        help="Save plots as PNG files instead of showing them interactively"
+    mode_group.add_argument(
+        "--stems",
+        default="vocals,bass,other",
+        help="Comma-separated stems to transcribe (default: vocals,bass,other)",
     )
-    parser.add_argument(
-        "--sample-rate", "-sr",
-        type=int,
-        default=22050,
-        help="Target sample rate for audio loading (default: 22050)"
-    )
-    parser.add_argument(
-        "--confidence-threshold", "-c",
-        type=float,
-        default=0.4,
-        help="Minimum confidence to keep a detected note (default: 0.4)"
-    )
-    parser.add_argument(
-        "--subdivisions",
-        type=int,
-        default=4,
-        choices=[1, 2, 4, 8, 16],
-        help="Quantization grid: 4=sixteenth notes, 8=thirty-second notes (default: 4)"
-    )
-    parser.add_argument(
-        "--info-only",
-        action="store_true",
-        help="Only show audio file info, don't run transcription"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Print detailed progress information"
+    mode_group.add_argument("--stem-model", default="htdemucs", help="Demucs model name (default: htdemucs)")
+    mode_group.add_argument("--stems-dir", help="Load pre-separated stems from this directory")
+    mode_group.add_argument("--device", choices=["cpu", "cuda"], help="Device for Demucs (auto-detect if omitted)")
+    mode_group.add_argument(
+        "--stem-modes",
+        default="",
+        help="Per-stem detection mode, e.g. vocals:mono,other:poly",
     )
 
     return parser.parse_args()
 
 
-def check_dependencies():
-    """Check that required packages are installed and warn about optional ones."""
+def check_dependencies(mode: str):
     missing_required = []
     missing_optional = []
 
     try:
-        import numpy
+        import numpy  # noqa: F401
     except ImportError:
         missing_required.append("numpy")
 
     try:
-        import librosa
+        import librosa  # noqa: F401
     except ImportError:
         missing_required.append("librosa")
 
     try:
-        import matplotlib
+        import matplotlib  # noqa: F401
     except ImportError:
         missing_optional.append("matplotlib (needed for visualization)")
 
     try:
-        import mido
+        import mido  # noqa: F401
     except ImportError:
         missing_optional.append("mido (needed for MIDI export)")
+
+    if mode in ("stems", "stems+poly") or mode == "mono":
+        pass
 
     if missing_required:
         print("ERROR: Missing required packages:")
@@ -123,21 +125,22 @@ def check_dependencies():
         sys.exit(1)
 
     if missing_optional:
-        print("WARNING: Missing optional packages (some features unavailable):")
+        print("WARNING: Missing optional packages:")
         for pkg in missing_optional:
             print(f"  pip install {pkg.split(' ')[0]}")
         print()
 
 
-def print_banner():
+def print_banner(mode: str):
     print("=" * 55)
-    print("  Monophonic Melody Transcriber")
-    print("  Audio → Pitch Detection → MIDI")
+    print("  Midicraft — Audio Transcription")
+    print(f"  Mode: {mode}")
     print("=" * 55)
 
 
 def print_summary(notes, output_files, elapsed_s):
     from output.text_export import TextExporter
+
     exporter = TextExporter()
     stats = exporter.summary(notes)
 
@@ -150,16 +153,11 @@ def print_summary(notes, output_files, elapsed_s):
 
     pr = stats.get("pitch_range", {})
     if pr:
-        print(f"  Pitch range:      {pr.get('lowest')} → {pr.get('highest')} ({pr.get('span_semitones')} semitones)")
+        print(f"  Pitch range:      {pr.get('lowest')} -> {pr.get('highest')} ({pr.get('span_semitones')} semitones)")
 
-    dur = stats.get("duration", {})
-    if dur:
-        print(f"  Note duration:    {dur.get('shortest_ms')}ms – {dur.get('longest_ms')}ms avg")
-
-    conf = stats.get("confidence", {})
-    if conf:
-        low = conf.get('low_confidence_notes', 0)
-        print(f"  Avg confidence:   {conf.get('average', 0):.2f}  ({low} low-confidence notes)")
+    voices = sorted({n.voice_id for n in notes})
+    if len(voices) > 1 or (voices and voices[0] != 0):
+        print(f"  Voices/channels:  {voices}")
 
     print("\nOutput files:")
     for path in output_files:
@@ -169,156 +167,128 @@ def print_summary(notes, output_files, elapsed_s):
 
 def main():
     args = parse_args()
-    print_banner()
-    check_dependencies()
+    print_banner(args.mode)
+    check_dependencies(args.mode)
 
-    # --- validate input file ---
     if not os.path.exists(args.audio_file):
         print(f"ERROR: File not found: {args.audio_file}")
         sys.exit(1)
 
-    supported = ['.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aiff']
-    ext = os.path.splitext(args.audio_file)[1].lower()
-    if ext not in supported:
-        print(f"WARNING: Unsupported extension '{ext}'. Supported: {supported}")
-
-    # --- imports (after dependency check) ---
-    from audio.loader import AudioLoader
-    from audio.preprocessor import Preprocessor
-    from audio.segmenter import Segmenter
-    from features.pitch import PitchDetector
-    from features.onset import OnsetDetector
-    from features.spectrum import SpectrumAnalyzer
-    from transcription.note_builder import NoteBuilder
-    from transcription.quantizer import Quantizer
-    from transcription.cleaner import NoteCleaner
-    from output.midi_writer import MidiWriter
-    from output.visualizer import Visualizer
-    from output.text_export import TextExporter
-    import librosa
-
     os.makedirs(args.output_dir, exist_ok=True)
-    base_name = os.path.splitext(os.path.basename(args.audio_file))[0]
-
     start_time = time.time()
 
-    # ------------------------------------------------------------------ #
-    # STEP 1 — Load audio
-    # ------------------------------------------------------------------ #
-    print(f"\n[1/7] Loading audio: {args.audio_file}")
-    loader = AudioLoader(target_sr=args.sample_rate)
-    y, sr = loader.load(args.audio_file)
-
-    # print basic file info
-    duration = len(y) / sr
-    print(f"      Duration: {duration:.2f}s  |  Sample rate: {sr} Hz  |  Samples: {len(y):,}")
-
     if args.info_only:
+        from audio.loader import AudioLoader
+        from audio.segmenter import Segmenter
+
+        loader = AudioLoader(target_sr=args.sample_rate)
+        y, sr = loader.load(args.audio_file)
         seg = Segmenter(sr=sr)
         info = seg.info(y)
+        print(f"\nDuration: {len(y)/sr:.2f}s  |  SR: {sr} Hz")
         print("\nSegmenter info:")
         for k, v in info.items():
             print(f"  {k}: {v}")
         sys.exit(0)
 
-    # ------------------------------------------------------------------ #
-    # STEP 2 — Preprocess
-    # ------------------------------------------------------------------ #
-    print("[2/7] Preprocessing...")
-    pre = Preprocessor()
-    y = pre.normalize(y)
-    y = pre.trim_silence(y, sr)
-    y = pre.apply_preemphasis(y)
-    if args.verbose:
-        print(f"      After trimming: {len(y)/sr:.2f}s")
-
-    # ------------------------------------------------------------------ #
-    # STEP 3 — Detect pitch
-    # ------------------------------------------------------------------ #
-    print("[3/7] Detecting pitch (pYIN algorithm)...")
-    detector = PitchDetector(sr=sr)
-    f0, voiced_flag = detector.detect(y)
-    times = librosa.times_like(f0, sr=sr)
-    voiced_count = voiced_flag.sum()
-    print(f"      {voiced_count}/{len(voiced_flag)} frames voiced ({100*voiced_count/len(voiced_flag):.1f}%)")
-
-    # ------------------------------------------------------------------ #
-    # STEP 4 — Detect tempo
-    # ------------------------------------------------------------------ #
-    print("[4/7] Detecting tempo...")
-    onset_det = OnsetDetector(sr=sr)
-    tempo = onset_det.detect_tempo(y)
-    print(f"      Detected tempo: {tempo:.1f} BPM")
-
-    # ------------------------------------------------------------------ #
-    # STEP 5 — Build + clean notes
-    # ------------------------------------------------------------------ #
-    print("[5/7] Building note list...")
-    builder = NoteBuilder()
-    notes = builder.build(f0, voiced_flag, times)
-    print(f"      Raw notes detected: {len(notes)}")
-
-    cleaner = NoteCleaner(
-        min_duration_s=0.05,
-        min_confidence=args.confidence_threshold
+    export_kw = dict(
+        export_midi="midi" in args.export_formats,
+        export_text="text" in args.export_formats,
+        export_csv="csv" in args.export_formats,
+        export_json="json" in args.export_formats,
+        show_plot=not args.no_plot,
+        save_plot=args.save_plots,
     )
-    notes = cleaner.clean(notes)
-    print(f"      After cleaning: {len(notes)} notes")
 
-    # ------------------------------------------------------------------ #
-    # STEP 6 — Quantize
-    # ------------------------------------------------------------------ #
-    print(f"[6/7] Quantizing to grid (subdivisions={args.subdivisions})...")
-    quantizer = Quantizer(tempo=tempo, subdivisions=args.subdivisions)
-    notes = quantizer.snap_to_grid(notes)
+    stem_list = [s.strip() for s in args.stems.split(",") if s.strip()]
+    stem_modes = parse_stem_modes(args.stem_modes)
 
-    # ------------------------------------------------------------------ #
-    # STEP 7 — Export
-    # ------------------------------------------------------------------ #
-    print("[7/7] Exporting results...")
+    if args.mode == "stems+poly":
+        for stem in stem_list:
+            stem_modes.setdefault(stem, "mono")
+        if "other" in stem_list:
+            stem_modes["other"] = "poly"
+
+    notes = []
     output_files = []
-    exporter = TextExporter()
-    writer = MidiWriter()
 
-    if "midi" in args.export_formats:
-        path = os.path.join(args.output_dir, f"{base_name}.mid")
-        writer.write(notes, path, tempo_bpm=tempo)
-        output_files.append(path)
+    if args.mode == "mono":
+        from pipeline import MonophonicPipeline
 
-    if "text" in args.export_formats:
-        path = os.path.join(args.output_dir, f"{base_name}_notes.txt")
-        text = exporter.to_text(notes)
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(text)
-        print(f"[TextExporter] Saved text to: {path}")
-        output_files.append(path)
+        pipeline = MonophonicPipeline(
+            filepath=args.audio_file,
+            sample_rate=args.sample_rate,
+            min_confidence=args.confidence_threshold,
+            quantize_subdivisions=args.subdivisions,
+            output_dir=args.output_dir,
+        )
+        notes = pipeline.run(**export_kw)
 
-    if "csv" in args.export_formats:
-        path = os.path.join(args.output_dir, f"{base_name}_notes.csv")
-        exporter.to_csv(notes, path)
-        output_files.append(path)
+    elif args.mode in ("stems", "stems+poly"):
+        from pipeline import StemPipeline
 
-    if "json" in args.export_formats:
-        path = os.path.join(args.output_dir, f"{base_name}_notes.json")
-        exporter.to_json(notes, path)
-        output_files.append(path)
+        pipeline = StemPipeline(
+            filepath=args.audio_file,
+            sample_rate=args.sample_rate,
+            min_confidence=args.confidence_threshold,
+            quantize_subdivisions=args.subdivisions,
+            output_dir=args.output_dir,
+            stems=stem_list,
+            stem_model=args.stem_model,
+            device=args.device,
+            stem_modes=stem_modes,
+            stems_dir=args.stems_dir,
+            separate_only=args.separate_only,
+        )
+        result = pipeline.run(**export_kw)
+        notes = result.notes
 
-    # ------------------------------------------------------------------ #
-    # Visualization
-    # ------------------------------------------------------------------ #
-    if not args.no_plot:
-        print("\nGenerating visualizations...")
-        viz = Visualizer(sr=sr)
-        save_path = None
+        if args.separate_only:
+            base = os.path.splitext(os.path.basename(args.audio_file))[0]
+            stems_out = args.stems_dir or os.path.join(args.output_dir, f"{base}_stems")
+            print(f"\nStems saved to: {stems_out}")
+            sys.exit(0)
 
-        if args.save_plots:
-            save_path = os.path.join(args.output_dir, f"{base_name}_dashboard.png")
-            output_files.append(save_path)
+    elif args.mode == "poly":
+        from pipeline import PolyphonicPipeline
 
-        viz.full_dashboard(y, f0, voiced_flag, notes, save_path=save_path)
+        try:
+            from basic_pitch.inference import predict  # noqa: F401
+        except ImportError:
+            print("ERROR: basic-pitch required for --mode poly")
+            print("  pip install -r requirements-poly.txt")
+            sys.exit(1)
+
+        pipeline = PolyphonicPipeline(
+            filepath=args.audio_file,
+            sample_rate=args.sample_rate,
+            min_confidence=args.confidence_threshold,
+            quantize_subdivisions=args.subdivisions,
+            output_dir=args.output_dir,
+        )
+        result = pipeline.run(**export_kw)
+        notes = result.notes
+
+    base_name = os.path.splitext(os.path.basename(args.audio_file))[0]
+    for fmt in args.export_formats:
+        if fmt == "midi":
+            suffix = "" if args.mode == "mono" else f"_{'multitrack' if args.mode in ('stems', 'stems+poly') else 'poly'}"
+            output_files.append(os.path.join(args.output_dir, f"{base_name}{suffix}.mid"))
+        elif fmt == "text":
+            suffix = "_notes" if args.mode == "mono" else f"_{'multitrack_notes' if args.mode in ('stems', 'stems+poly') else 'poly_notes'}"
+            output_files.append(os.path.join(args.output_dir, f"{base_name}{suffix}.txt"))
+        elif fmt == "csv":
+            suffix = "_notes" if args.mode == "mono" else f"_{'multitrack_notes' if args.mode in ('stems', 'stems+poly') else 'poly_notes'}"
+            output_files.append(os.path.join(args.output_dir, f"{base_name}{suffix}.csv"))
+        elif fmt == "json":
+            suffix = "" if args.mode == "mono" else f"_{'multitrack' if args.mode in ('stems', 'stems+poly') else 'poly'}"
+            output_files.append(os.path.join(args.output_dir, f"{base_name}{suffix}.json"))
 
     elapsed = time.time() - start_time
-    print_summary(notes, output_files, elapsed)
+    if notes:
+        print_summary(notes, [p for p in output_files if os.path.exists(p)], elapsed)
+    else:
+        print(f"\nDone in {elapsed:.2f}s (no notes exported).")
 
 
 if __name__ == "__main__":
