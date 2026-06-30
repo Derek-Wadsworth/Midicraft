@@ -41,10 +41,22 @@ def export_minecraft_song(
     tempo_bpm: float,
     output_path: str,
     subdivisions: int = 4,
+    export_layout: bool = True,
 ) -> str:
-    """Write grid-native Minecraft song JSON."""
+    """Write grid-native Minecraft song JSON and optional sequencer layout."""
     from minecraft.grid_exporter import GridExporter
-    return GridExporter().export_notes(notes, tempo_bpm, output_path, subdivisions)
+    from minecraft.sequencer_layout import SequencerLayoutGenerator
+
+    exporter = GridExporter()
+    song = exporter.from_notes(notes, tempo_bpm, subdivisions)
+    exporter.write_json(song, output_path)
+
+    if export_layout:
+        layout_path = output_path.replace("_song.json", "_layout.json")
+        mcfunction_path = output_path.replace("_song.json", "_build.mcfunction")
+        SequencerLayoutGenerator().export_from_song(song, layout_path, mcfunction_path)
+
+    return output_path
 
 
 class MonophonicPipeline:

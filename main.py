@@ -288,6 +288,8 @@ def main():
             output_files.append(os.path.join(args.output_dir, f"{base_name}{suffix}.json"))
         elif fmt == "song":
             output_files.append(os.path.join(args.output_dir, f"{base_name}_song.json"))
+            output_files.append(os.path.join(args.output_dir, f"{base_name}_layout.json"))
+            output_files.append(os.path.join(args.output_dir, f"{base_name}_build.mcfunction"))
 
     elapsed = time.time() - start_time
     if notes:
