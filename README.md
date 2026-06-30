@@ -67,4 +67,4 @@ JSON exports include `voice_id` and `stem_name` per note for Minecraft lane mapp
 python main.py song.mp3 --export-formats song --no-plot
 ```
 
-Writes `*_song.json` — grid-native format with `grid_start`, `grid_duration`, `block_note` (0–24), and `block_instrument` per track. This is the contract the future mod will read.
+Writes `*_song.json`, `*_layout.json`, and `*_build.mcfunction` — grid-native song data, 3D block coordinates, and `/setblock` commands for testing.
