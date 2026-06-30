@@ -24,8 +24,10 @@ class PitchDetector:
         3. Invert the period to get the frequency
     """
 
-    def __init__(self, sr: int = 22050):
+    def __init__(self, sr: int = 22050, fmin: str = 'C2', fmax: str = 'C7'):
         self.sr = sr
+        self.fmin = fmin
+        self.fmax = fmax
 
     def detect(self, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -46,8 +48,8 @@ class PitchDetector:
 
         f0, voiced_flag, voiced_prob = librosa.pyin(
             y,
-            fmin=librosa.note_to_hz('C2'),   # ~65 Hz  — below bass guitar low E
-            fmax=librosa.note_to_hz('C7'),   # ~2093 Hz — above soprano high C
+            fmin=librosa.note_to_hz(self.fmin),
+            fmax=librosa.note_to_hz(self.fmax),
             sr=self.sr,
         )
 
@@ -72,8 +74,8 @@ class PitchDetector:
 
         f0, voiced_flag, voiced_prob = librosa.pyin(
             y,
-            fmin=librosa.note_to_hz('C2'),
-            fmax=librosa.note_to_hz('C7'),
+            fmin=librosa.note_to_hz(self.fmin),
+            fmax=librosa.note_to_hz(self.fmax),
             sr=self.sr,
         )
         f0 = np.nan_to_num(f0, nan=0.0)

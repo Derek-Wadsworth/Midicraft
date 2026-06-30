@@ -58,7 +58,8 @@ class NoteCleaner:
         notes = self._remove_low_confidence(notes)
         notes = self._remove_short(notes)
         notes = self._merge_adjacent(notes)
-        notes = sorted(notes, key=lambda n: n.start_time)
+        notes = self._resolve_overlaps(notes)
+        notes = sorted(notes, key=lambda n: (n.voice_id, n.start_time))
 
         return notes
 
@@ -107,6 +108,24 @@ class NoteCleaner:
         if not notes:
             return []
 
+        from itertools import groupby
+
+        merged_all: list[Note] = []
+        for voice_id, group in groupby(sorted(notes, key=lambda n: n.voice_id), key=lambda n: n.voice_id):
+            voice_notes = list(group)
+            merged_all.extend(self._merge_adjacent_for_voice(voice_notes))
+
+        n_merged = len(notes) - len(merged_all)
+        if n_merged > 0:
+            print(f"  [Cleaner] Merged {n_merged} note fragments (gap < {self.merge_gap_s*1000:.0f}ms)")
+
+        return merged_all
+
+    def _merge_adjacent_for_voice(self, notes: list[Note]) -> list[Note]:
+        """Merge consecutive same-pitch notes within one voice."""
+        if not notes:
+            return []
+
         sorted_notes = sorted(notes, key=lambda n: n.start_time)
         merged = [sorted_notes[0]]
 
@@ -116,7 +135,6 @@ class NoteCleaner:
             same_pitch = current.midi_pitch == prev.midi_pitch
 
             if same_pitch and gap <= self.merge_gap_s:
-                # extend the previous note to cover the current one
                 merged[-1] = Note(
                     midi_pitch=prev.midi_pitch,
                     note_name=prev.note_name,
@@ -124,15 +142,46 @@ class NoteCleaner:
                     end_time=current.end_time,
                     confidence=max(prev.confidence, current.confidence),
                     frequency=prev.frequency,
+                    voice_id=prev.voice_id,
+                    stem_name=prev.stem_name,
                 )
             else:
                 merged.append(current)
 
-        n_merged = len(notes) - len(merged)
-        if n_merged > 0:
-            print(f"  [Cleaner] Merged {n_merged} note fragments (gap < {self.merge_gap_s*1000:.0f}ms)")
-
         return merged
+
+    def _resolve_overlaps(self, notes: list[Note]) -> list[Note]:
+        """
+        If two voices share identical pitch at overlapping times, keep the
+        higher-confidence note and trim or drop the weaker one.
+        """
+        if len(notes) < 2:
+            return notes
+
+        sorted_notes = sorted(notes, key=lambda n: (n.start_time, -n.confidence))
+        kept: list[Note] = []
+
+        for note in sorted_notes:
+            discard = False
+            for i, existing in enumerate(kept):
+                if (
+                    existing.midi_pitch == note.midi_pitch
+                    and existing.voice_id != note.voice_id
+                    and note.start_time < existing.end_time
+                    and note.end_time > existing.start_time
+                ):
+                    if note.confidence > existing.confidence:
+                        kept[i] = note
+                    discard = True
+                    break
+            if not discard:
+                kept.append(note)
+
+        removed = len(notes) - len(kept)
+        if removed > 0:
+            print(f"  [Cleaner] Resolved {removed} overlapping duplicate-pitch notes")
+
+        return kept
 
     # ------------------------------------------------------------------
     # Optional: pitch smoothing
@@ -168,11 +217,13 @@ class NoteCleaner:
             for note, new_pitch in zip(notes, smoothed_pitches):
                 result.append(Note(
                     midi_pitch=int(new_pitch),
-                    note_name=librosa.midi_to_note(int(new_pitch)),
+                    note_name=librosa.midi_to_note(int(new_pitch), unicode=False),
                     start_time=note.start_time,
                     end_time=note.end_time,
                     confidence=note.confidence,
                     frequency=note.frequency,
+                    voice_id=note.voice_id,
+                    stem_name=note.stem_name,
                 ))
         except ImportError:
             return notes  # skip smoothing if librosa not available

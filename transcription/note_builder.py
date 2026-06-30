@@ -159,7 +159,7 @@ class NoteBuilder:
 
         return Note(
             midi_pitch=midi_pitch,
-            note_name=librosa.midi_to_note(midi_pitch),
+            note_name=librosa.midi_to_note(midi_pitch, unicode=False),
             start_time=start,
             end_time=end,
             confidence=confidence,

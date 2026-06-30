@@ -71,6 +71,8 @@ class Quantizer:
                 end_time=round(snapped_end, 6),
                 confidence=note.confidence,
                 frequency=note.frequency,
+                voice_id=note.voice_id,
+                stem_name=note.stem_name,
             ))
 
         return quantized

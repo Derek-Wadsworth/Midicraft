@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 
 try:
@@ -83,3 +85,14 @@ class AudioLoader:
             "target_sr": self.target_sr,
             "n_samples_after_load": int(duration * self.target_sr),
         }
+
+    def save_wav(self, y: np.ndarray, filepath: str, sr: int | None = None) -> str:
+        """Save a mono waveform to a WAV file."""
+        try:
+            import soundfile as sf
+        except ImportError as exc:
+            raise ImportError("soundfile is required to save WAV files.") from exc
+
+        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else ".", exist_ok=True)
+        sf.write(filepath, y, sr or self.target_sr)
+        return filepath
