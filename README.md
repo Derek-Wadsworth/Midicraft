@@ -60,3 +60,11 @@ python main.py song.mp3 --mode stems --stems-dir ./output/song_stems
 - **poly**: `./output/song_poly.mid`
 
 JSON exports include `voice_id` and `stem_name` per note for Minecraft lane mapping.
+
+**Minecraft song export** (`--export-formats song`):
+
+```bash
+python main.py song.mp3 --export-formats song --no-plot
+```
+
+Writes `*_song.json` — grid-native format with `grid_start`, `grid_duration`, `block_note` (0–24), and `block_instrument` per track. This is the contract the future mod will read.
