@@ -36,6 +36,17 @@ from transcription.poly_note_builder import PolyNoteBuilder
 from transcription.quantizer import Quantizer
 
 
+def export_minecraft_song(
+    notes: list,
+    tempo_bpm: float,
+    output_path: str,
+    subdivisions: int = 4,
+) -> str:
+    """Write grid-native Minecraft song JSON."""
+    from minecraft.grid_exporter import GridExporter
+    return GridExporter().export_notes(notes, tempo_bpm, output_path, subdivisions)
+
+
 class MonophonicPipeline:
     """
     End-to-end monophonic melody transcription on a single waveform.
@@ -190,6 +201,7 @@ class MonophonicPipeline:
         export_text: bool = True,
         export_csv: bool = False,
         export_json: bool = False,
+        export_song: bool = False,
         show_plot: bool = True,
         save_plot: bool = False,
     ) -> list[Note]:
@@ -215,7 +227,7 @@ class MonophonicPipeline:
 
         print("[6/7] Quantized to grid")
         print("[7/7] Exporting...")
-        self._step_export(export_midi, export_text, export_csv, export_json)
+        self._step_export(export_midi, export_text, export_csv, export_json, export_song)
 
         if show_plot or save_plot:
             save_path = None
@@ -239,7 +251,7 @@ class MonophonicPipeline:
             self.y = result.y
         self.sr = result.sr
 
-    def _step_export(self, midi: bool, text: bool, csv: bool, json_export: bool):
+    def _step_export(self, midi: bool, text: bool, csv: bool, json_export: bool, song: bool = False):
         base = os.path.splitext(os.path.basename(self.filepath))[0]
 
         if midi:
@@ -260,6 +272,12 @@ class MonophonicPipeline:
         if json_export:
             path = os.path.join(self.output_dir, f"{base}_notes.json")
             self.exporter.to_json(self.notes, path)
+
+        if song:
+            path = os.path.join(self.output_dir, f"{base}_song.json")
+            export_minecraft_song(
+                self.notes, self.tempo, path, self.quantize_subdivisions
+            )
 
     def print_notes(self):
         print(self.exporter.to_text(self.notes))
@@ -315,6 +333,7 @@ class StemPipeline:
         export_text: bool = True,
         export_csv: bool = False,
         export_json: bool = False,
+        export_song: bool = False,
         show_plot: bool = False,
         save_plot: bool = False,
     ) -> MergedTranscriptionResult:
@@ -423,6 +442,12 @@ class StemPipeline:
             path = os.path.join(self.output_dir, f"{base}_multitrack.json")
             self.exporter.to_json_multitrack(merged, path)
 
+        if export_song:
+            path = os.path.join(self.output_dir, f"{base}_song.json")
+            export_minecraft_song(
+                merged.notes, tempo, path, self.mono.quantize_subdivisions
+            )
+
         if show_plot or save_plot:
             save_path = None
             if save_plot:
@@ -462,6 +487,7 @@ class PolyphonicPipeline:
         export_text: bool = True,
         export_csv: bool = False,
         export_json: bool = False,
+        export_song: bool = False,
         show_plot: bool = False,
         save_plot: bool = False,
     ) -> TranscriptionResult:
@@ -491,6 +517,12 @@ class PolyphonicPipeline:
 
         if export_json:
             self.mono.exporter.to_json(result.notes, os.path.join(self.mono.output_dir, f"{base}_poly.json"))
+
+        if export_song:
+            path = os.path.join(self.mono.output_dir, f"{base}_song.json")
+            export_minecraft_song(
+                result.notes, tempo, path, self.mono.quantize_subdivisions
+            )
 
         if show_plot or save_plot:
             save_path = os.path.join(self.mono.output_dir, f"{base}_poly_dashboard.png") if save_plot else None

@@ -50,9 +50,9 @@ Examples:
     parser.add_argument(
         "--export-formats", "-f",
         nargs="+",
-        choices=["midi", "csv", "json", "text"],
+        choices=["midi", "csv", "json", "text", "song"],
         default=["midi", "text"],
-        help="Output formats (default: midi text)",
+        help="Output formats (default: midi text). 'song' = grid-native Minecraft JSON",
     )
     parser.add_argument("--no-plot", action="store_true", help="Skip visualization")
     parser.add_argument("--save-plots", action="store_true", help="Save plots as PNG")
@@ -196,6 +196,7 @@ def main():
         export_text="text" in args.export_formats,
         export_csv="csv" in args.export_formats,
         export_json="json" in args.export_formats,
+        export_song="song" in args.export_formats,
         show_plot=not args.no_plot,
         save_plot=args.save_plots,
     )
@@ -285,6 +286,8 @@ def main():
         elif fmt == "json":
             suffix = "" if args.mode == "mono" else f"_{'multitrack' if args.mode in ('stems', 'stems+poly') else 'poly'}"
             output_files.append(os.path.join(args.output_dir, f"{base_name}{suffix}.json"))
+        elif fmt == "song":
+            output_files.append(os.path.join(args.output_dir, f"{base_name}_song.json"))
 
     elapsed = time.time() - start_time
     if notes:
