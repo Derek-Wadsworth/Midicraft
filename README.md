@@ -21,8 +21,15 @@ Optional extras:
 
 ```bash
 pip install -r requirements-stems.txt   # Demucs stem separation
-pip install -r requirements-poly.txt    # Basic Pitch polyphonic mode
+
+# Polyphonic mode (two steps — basic-pitch has a stale tensorflow pin on PyPI):
+pip install -r requirements-poly.txt
+pip install basic-pitch==0.4.0 --no-deps
+# Or: powershell -File scripts/install-poly.ps1
 ```
+
+**Note:** If stem separation fails with a TorchCodec error, upgrade/downgrade to matching torch versions:
+`pip install "torch>=2.5,<2.12" "torchaudio>=2.5,<2.12"`
 
 ## Examples
 

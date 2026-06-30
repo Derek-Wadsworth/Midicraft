@@ -257,6 +257,8 @@ def main():
         except ImportError:
             print("ERROR: basic-pitch required for --mode poly")
             print("  pip install -r requirements-poly.txt")
+            print("  pip install basic-pitch==0.4.0 --no-deps")
+            print("  # Or: powershell -File scripts/install-poly.ps1")
             sys.exit(1)
 
         pipeline = PolyphonicPipeline(

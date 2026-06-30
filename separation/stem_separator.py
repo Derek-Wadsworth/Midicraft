@@ -13,12 +13,17 @@ from separation.stem_config import (
 
 try:
     import torch
-    import torchaudio
     from demucs.pretrained import get_model
     from demucs.apply import apply_model
     DEMUCS_AVAILABLE = True
 except ImportError:
     DEMUCS_AVAILABLE = False
+
+try:
+    import librosa
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
 
 
 class StemSeparator:
@@ -77,13 +82,7 @@ class StemSeparator:
         if progress_callback:
             progress_callback(f"Loading audio for separation: {filepath}")
 
-        wav, sr = torchaudio.load(filepath)
-        if wav.shape[0] == 1:
-            wav = wav.repeat(2, 1)
-
-        if sr != DEMUCS_SAMPLE_RATE:
-            wav = torchaudio.functional.resample(wav, sr, DEMUCS_SAMPLE_RATE)
-            sr = DEMUCS_SAMPLE_RATE
+        wav, sr = self._load_audio_stereo(filepath)
 
         if progress_callback:
             progress_callback(f"Running Demucs on {self.device} (this may take several minutes on CPU)...")
@@ -113,6 +112,24 @@ class StemSeparator:
             progress_callback(f"Separated {len(result)} stems: {', '.join(result.keys())}")
 
         return result
+
+    def _load_audio_stereo(self, filepath: str) -> tuple["torch.Tensor", int]:
+        """
+        Load stereo audio via librosa (avoids torchaudio/torchcodec version issues).
+        """
+        if not LIBROSA_AVAILABLE:
+            raise ImportError("librosa is required for stem separation audio loading.")
+
+        y, sr = librosa.load(filepath, sr=None, mono=False)
+        if y.ndim == 1:
+            y = np.stack([y, y])
+
+        if sr != DEMUCS_SAMPLE_RATE:
+            y = librosa.resample(y, orig_sr=sr, target_sr=DEMUCS_SAMPLE_RATE)
+            sr = DEMUCS_SAMPLE_RATE
+
+        wav = torch.from_numpy(y.astype(np.float32))
+        return wav, sr
 
     def separate_and_save(
         self,
